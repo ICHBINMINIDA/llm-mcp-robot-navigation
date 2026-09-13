@@ -1,0 +1,13 @@
+# Core stack
+mcp<2                 # this code uses mcp.server.fastmcp, removed in mcp 2.x
+anyio
+requests
+numpy
+opencv-python
+
+# rclpy is NOT installable via pip — it ships with your ROS 2 distro
+# (source /opt/ros/<distro>/setup.bash before running anything here).
+
+# Optional: voice input (c_client.py only, off unless VOICE_ENABLED=true)
+vosk
+sounddevice
