@@ -5,6 +5,14 @@ variable (perception, thresholds, kinematics, model settings, safety, metrics)
 is shared, so a difference in the results can only come from the role given to
 the LLM.
 
+## Demo - Videos (C Architecture)
+
+https://github.com/user-attachments/assets/4ebeb4e1-cf25-4ccb-8f77-d192ecff3080
+
+https://github.com/user-attachments/assets/340395e1-0e51-4d80-bee9-e1d9f4f4d950
+
+
+
 ## Naming
 
 | New name | Former name | Role of the LLM |
