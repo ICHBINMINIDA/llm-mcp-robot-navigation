@@ -102,15 +102,21 @@ class RunMetrics:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
         self._lock = threading.Lock()
 
-    def new_run(self, target: str) -> None:
+    def new_run(self, command: str = "") -> None:
+        """Start a new run. Call it BEFORE target extraction, so that the
+        extraction LLM call is counted in (and logged under) this run."""
         self.run_id = uuid.uuid4().hex[:12]
-        self.target = target
+        self.target = ""
         self.started = time.time()
         self.llm_calls = self.tool_calls = self.detect_calls = 0
         self.llm_seconds = 0.0
         self.json_repairs = self.json_failures = self.invalid_actions = self.steps = 0
         self.outcome = "unknown"
-        self.event("run_start", target=target)
+        self.event("run_start", command=command)
+
+    def set_target(self, target: str) -> None:
+        self.target = target
+        self.event("target", target=target)
 
     @property
     def elapsed(self) -> float:
@@ -231,6 +237,19 @@ def fallback_target(command: str) -> str:
     return goal
 
 
+async def start_run(command: str, metrics: RunMetrics) -> str:
+    """Begin a task: re-arm the emergency stop, open the run, extract the target.
+
+    Typing a new goal is the explicit operator action that clears a latched
+    emergency stop flag; nothing else on the client or server clears it.
+    """
+    clear_stop_flag()
+    metrics.new_run(command)
+    target = await infer_target(command, metrics)
+    metrics.set_target(target)
+    return target
+
+
 async def infer_target(command: str, metrics: Optional[RunMetrics] = None) -> str:
     """LLM target extraction with a deterministic fallback (same in all clients)."""
     try:
@@ -313,6 +332,11 @@ def clear_stop_flag() -> None:
         pass
     except Exception:
         pass
+
+
+def stop_flag_set() -> bool:
+    """True while the emergency stop is latched (raised by anyone, any process)."""
+    return os.path.exists(STOP_FLAG)
 
 
 async def emergency_stop(session: ClientSession, metrics: Optional[RunMetrics] = None) -> None:

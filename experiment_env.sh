@@ -75,10 +75,14 @@ export SETTLE_SEC=0.25                 # chassis settling before a post-motion d
 export FRESH_FRAME_TIMEOUT_SEC=0.8
 
 # ---- agent budgets ---------------------------------------------------------
-export MAX_AGENT_STEPS=45              # A, A1, A2 (C overrides it to 10)
-export HISTORY_LIMIT=5
+export MAX_AGENT_STEPS=45              # A, A1, A2
+export HISTORY_LIMIT=5                 # A, A1, A2
+export C_MAX_AGENT_STEPS=10            # C: skill calls, not primitives
+export C_HISTORY_LIMIT=6
 export MAX_REPAIR_ATTEMPTS=1
 
-rm -f "$ROBOT_STOP_FLAG"    # never start a session with a stale stop flag
+# The stop flag is latched: only this script (new session) and a new task typed
+# into a client clear it. Never start a session with a stale flag.
+rm -f "$ROBOT_STOP_FLAG"
 
 echo "Experiment environment loaded (model=$OLLAMA_MODEL, metrics=$METRICS_PATH)"

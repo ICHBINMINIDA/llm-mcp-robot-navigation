@@ -133,8 +133,7 @@ def cache_still_valid(motion_tool: str, detection: Any, lost_count: int) -> bool
 
 async def run_task(session: ClientSession, command: str, available: Set[str],
                    metrics: lc.RunMetrics, stop_event: asyncio.Event) -> str:
-    target = await lc.infer_target(command, metrics)
-    metrics.new_run(target)
+    target = await lc.start_run(command, metrics)
     print(f"Target object: {target}")
     print("Type 'stop' and press Enter to interrupt the robot.")
 
@@ -152,6 +151,8 @@ async def run_task(session: ClientSession, command: str, available: Set[str],
 
         print(f"Robot feedback: {action.feedback}")
         result = await lc.call_tool(session, action.tool, action.arguments, metrics)
+        if lc.stop_flag_set():          # latched emergency stop from any source
+            return "emergency_stop"
         observation = lc.compact_result(result)
         print("Tool result: " + json.dumps(observation, ensure_ascii=False))
         history.append({"step": step, "source": "llm", "tool": action.tool,
@@ -181,6 +182,9 @@ async def run_task(session: ClientSession, command: str, available: Set[str],
             await asyncio.sleep(DETECT_INTERVAL_SEC)
             detection = await lc.call_tool(
                 session, "detect_object", {"object_name": target, "samples": 1}, metrics)
+            if lc.stop_flag_set():
+                await lc.call_tool(session, "stop_robot", {}, metrics)
+                return "emergency_stop"
             compact = lc.compact_result(detection)
             cached_detections += 1
             print(f"Cached-motion detection {index}: "

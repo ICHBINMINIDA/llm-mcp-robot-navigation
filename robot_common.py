@@ -145,6 +145,12 @@ def clear_stop_flag() -> None:
         pass
 
 
+def emergency_stop_refusal(motion: str) -> Dict[str, Any]:
+    """Tool result for a motion command refused because the stop flag is latched."""
+    return {"ok": False, "motion": motion, "error": "emergency_stop_latched",
+            "detail": "The emergency stop flag is set. Start a new task to re-arm."}
+
+
 async def run_blocking(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     """Run a blocking function in a worker thread.
 
@@ -335,6 +341,8 @@ class RobotNode(Node):
 
     def start_continuous(self, motion: str, linear: float, angular: float) -> Dict[str, Any]:
         self.clear_stop()
+        if stop_flag_set():
+            return emergency_stop_refusal(motion)
         self.drive(linear, angular, motion)
         return {
             "ok": True,
@@ -349,6 +357,9 @@ class RobotNode(Node):
         """Blocking timed motion. Call it through :func:`run_blocking`."""
         duration = clamp(duration, 0.0, MAX_MOTION_SEC)
         self.clear_stop()
+        if stop_flag_set():
+            return {"mode": "timed", "elapsed_sec": 0.0, "interrupted": True,
+                    **emergency_stop_refusal(motion)}
         start = time.monotonic()
         interrupted = False
         try:
@@ -383,8 +394,14 @@ class RobotNode(Node):
         self.get_logger().debug(f"stop({reason})")
 
     def clear_stop(self) -> None:
+        """Re-arm the in-process stop event before a new command.
+
+        The emergency stop FLAG is deliberately NOT cleared here: it is latched
+        until an operator starts a new task (``llm_common.start_run``) or a new
+        session (``experiment_env.sh``). Otherwise the next motion command the
+        LLM issues would silently cancel an emergency stop.
+        """
         self.stop_event.clear()
-        clear_stop_flag()
 
     def stop_requested(self) -> bool:
         """True if a stop was requested through EITHER layer.

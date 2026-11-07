@@ -24,8 +24,11 @@ from voice_input import WAKE_WORD, VoiceInput
 ARCH = "C"
 SERVER_SCRIPT = "c_server.py"
 
-MAX_STEPS = int(os.getenv("MAX_AGENT_STEPS", "10"))
-HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "6"))
+# C has its own budget variables: the shared MAX_AGENT_STEPS / HISTORY_LIMIT in
+# experiment_env.sh (45 / 5) belong to the primitive architectures and would
+# otherwise silently override C's intended values.
+MAX_STEPS = int(os.getenv("C_MAX_AGENT_STEPS", "10"))
+HISTORY_LIMIT = int(os.getenv("C_HISTORY_LIMIT", "6"))
 MAX_REPAIRS = int(os.getenv("MAX_REPAIR_ATTEMPTS", "1"))
 
 SKILLS: Set[str] = {"search_target", "align_to_target", "approach_target"}
@@ -115,7 +118,9 @@ async def run_skill(session: ClientSession, action: lc.ToolAction, terminal: lc.
     if action.tool not in SKILLS:
         return await lc.call_tool(session, action.tool, action.arguments, metrics)
 
-    hint = f"Type 'stop'{f" or say '{WAKE_WORD}'" if voice.available else ''} to interrupt."
+    # (No nested same-quote f-string: that needs Python 3.12; ROS Humble ships 3.10.)
+    voice_hint = f" or say '{WAKE_WORD}'" if voice.available else ""
+    hint = f"Type 'stop'{voice_hint} to interrupt."
     print(f"Robot is moving. {hint}")
     task = asyncio.create_task(lc.call_tool(session, action.tool, action.arguments, metrics))
 
@@ -171,9 +176,7 @@ async def read_goal(terminal: lc.Terminal, voice: VoiceInput) -> tuple[str, str]
 async def run_task(session: ClientSession, command: str, available: Set[str],
                    metrics: lc.RunMetrics, terminal: lc.Terminal,
                    voice: VoiceInput, pending: Dict[str, Any]) -> str:
-    lc.clear_stop_flag()
-    target = await lc.infer_target(command, metrics)
-    metrics.new_run(target)
+    target = await lc.start_run(command, metrics)
     print(f"Target object: {target}")
 
     history: Deque[Dict[str, Any]] = deque(maxlen=HISTORY_LIMIT)

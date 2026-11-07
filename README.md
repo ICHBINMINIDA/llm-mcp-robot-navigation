@@ -112,8 +112,17 @@ transcribed.
    *first*, then calls `stop_robot`.
 3. The motion watchdog stops the robot if commands stop being refreshed.
 
-Any single layer is enough to stop the robot; `experiment_env.sh` clears a stale
-flag at the start of every session.
+Any single layer is enough to stop the robot.
+
+**The flag is latched.** While it exists, every motion tool refuses to move
+(`error: emergency_stop_latched`), skills end with `interrupted_by_stop`, and
+the client ends the task with outcome `emergency_stop`. Nothing the LLM can do
+clears it: only an operator starting a new task in the client, or a new session
+(`experiment_env.sh`), re-arms the robot. To stop from anywhere:
+
+```bash
+touch /tmp/robot_llm_stop.flag      # or: $ROBOT_STOP_FLAG
+```
 
 ## What changed compared with the first implementation
 
@@ -123,8 +132,11 @@ flag at the start of every session.
    (`rc.run_blocking`). In mcp 1.x a synchronous tool function runs directly
    inside the server event loop, so the whole session was blocked while the
    robot moved — `stop_robot` could never be delivered in A, B and C. The
-   emergency stop is now real: start a skill, call `stop_robot` from a second
-   client, and `/cmd_vel` goes to zero in milliseconds.
+   emergency stop is now real: start a skill, type `stop` in the same client
+   (or raise the stop flag from another terminal), and `/cmd_vel` goes to zero
+   in milliseconds. A *second client* is not a way to test this: each client
+   starts its own server process over stdio, so it would control a separate
+   ROS node.
 2. **Dead-man watchdog on continuous motion** (`MAX_CONTINUOUS_MOTION_SEC`).
    If the client crashes, hangs on Ollama, or the stdio pipe dies, the node
    stops the robot by itself. `keep_moving()` lets A2 prove it is still
@@ -183,7 +195,8 @@ flag at the start of every session.
 * **C** — the important fix: `align_to_target` and `approach_target` no longer
   abort on the *first* missed detection (`last_seen` used to start at 0.0). They
   tolerate `MISS_GRACE_SEC` **and** `MAX_CONSECUTIVE_MISSES`. `MAX_STEPS` is 10
-  so recovery is possible, and the prompt states the recovery policy explicitly,
+  (`C_MAX_AGENT_STEPS`, separate from the primitives' `MAX_AGENT_STEPS`) so
+  recovery is possible, and the prompt states the recovery policy explicitly,
   which is what makes the planner's behaviour measurable.
 
 ## Metrics
@@ -192,6 +205,11 @@ Both sides append to the same JSONL file (`METRICS_PATH`). Per run:
 
 `outcome`, `elapsed_sec`, `llm_calls`, `llm_seconds`, `tool_calls`,
 `detect_calls`, `steps`, `json_repairs`, `json_failures`, `invalid_actions`.
+
+A run starts when the command is typed, *before* target extraction, so the
+extraction LLM call is part of every run's `llm_calls`, `llm_seconds` and
+`elapsed_sec`. This matters most for B, where target extraction is the LLM's
+only job.
 
 `analyze_metrics.py` reports, per architecture: success rate, median and mean
 time to target, mean LLM/tool/detection calls, the share of wall-clock time
@@ -208,3 +226,15 @@ appear under the new names A, A1, A2, B and C.
   trial after each model load.
 * Record failures by category — the `outcome` field already separates
   `max_steps`, `timeout`, `target_not_visible`, `user_stop` and `error`.
+
+## Tests
+
+```bash
+pip install "mcp<2" anyio requests numpy opencv-python-headless pytest
+pytest -q tests
+```
+
+The tests run without ROS: `tests/conftest.py` replaces `rclpy` and the message
+packages with small stand-ins, while the stop flag, motion state, metrics and
+JSON handling run for real. They cover the latched emergency stop, run metrics,
+JSON repair, C's step budget and Python 3.10 syntax for every module.

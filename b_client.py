@@ -28,8 +28,7 @@ TOOLS: Set[str] = {"go_to_object", "stop_robot"}
 
 async def run_task(session: ClientSession, command: str, metrics: lc.RunMetrics,
                    terminal: lc.Terminal) -> str:
-    target = await lc.infer_target(command, metrics)
-    metrics.new_run(target)
+    target = await lc.start_run(command, metrics)
     if not target:
         print("Robot answer: I could not identify the target object.")
         return "no_target"

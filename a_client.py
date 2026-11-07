@@ -179,8 +179,7 @@ async def decide(target: str, history: Deque[Dict[str, Any]], step: int,
 # --------------------------------------------------------------------------- #
 async def run_task(session: ClientSession, command: str, available: Set[str],
                    metrics: lc.RunMetrics, stop_event: asyncio.Event) -> str:
-    target = await lc.infer_target(command, metrics)
-    metrics.new_run(target)
+    target = await lc.start_run(command, metrics)
     print(f"Target object: {target}")
     print("Type 'stop' and press Enter to interrupt the robot.")
 
@@ -197,6 +196,8 @@ async def run_task(session: ClientSession, command: str, available: Set[str],
 
         print(f"Robot feedback: {action.feedback}")
         result = await lc.call_tool(session, action.tool, action.arguments, metrics)
+        if lc.stop_flag_set():          # latched emergency stop from any source
+            return "emergency_stop"
         observation = lc.compact_result(result)
         print("Tool result: " + json.dumps(observation, ensure_ascii=False))
         history.append({"step": step, "tool": action.tool,
