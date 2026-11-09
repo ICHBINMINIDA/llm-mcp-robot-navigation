@@ -1,0 +1,4 @@
+failure,n,search_target,align_to_target,approach_target,stop_robot,fallback,n_solvable,recovery_success
+target_not_visible,21,0,21,0,0,0,11,1.0
+target_not_found,56,56,0,0,0,0,44,0.4772727272727273
+"timeout (search, hits=0)",37,11,0,0,26,0,7,0.0

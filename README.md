@@ -216,6 +216,85 @@ time to target, mean LLM/tool/detection calls, the share of wall-clock time
 spent waiting for the model (`llm_time_share`), and the JSON repair rate. Rows
 appear under the new names A, A1, A2, B and C.
 
+## Results — architecture C (Bachelor thesis)
+
+These results are from the Bachelor thesis *"Integration eines LLM-Agenten in die Entscheidungslogik mobiler
+Roboter am Beispiel der Objektnavigation"* (TH Brandenburg, submitted October 2026). A one-page summary is in the
+[poster (PDF)](docs/Abschlussposter.pdf). Architecture **C** is the target architecture:
+the LLM (**gemma3:27b** via Ollama, temperature 0, JSON mode) acts as a planner and picks one of three skills per
+step (at most 10 steps). Each skill wraps a closed, image-based control loop (30 Hz loop, perception ≈ 10 Hz,
+3 s dead-man switch), so model latency never sits inside the control loop.
+
+Robot: TurtleBot3 Waffle Pi, RGB camera only, SAM segmentation served over HTTP.
+
+**Setup:** 11 scenarios × 10 runs, recorded on 22–24 September 2026 in 7 sessions with one fixed prompt and code
+version. 15 runs without a scenario (e.g. warm-up) and 2 runs excluded by the lab protocol are not counted; every
+exclusion and correction is printed by `analyze_metrics.py`.
+
+| Group | Scenarios | Situation |
+|---|---|---|
+| Target in view | S1–S5 | the object is visible from the start pose (S3: twice the distance) |
+| Target out of view | S6–S8 | the robot has to search first; in **S8 the object is not in the room** |
+| Target lost during approach | S9–S11 | the object disappears while approaching; in **S11 it is removed from the room** |
+
+**Summary**
+
+* **100 of 110 runs ended with the intended behaviour:** the target was reached in every run of 8 of the
+  9 solvable scenarios (80/80), and the LLM correctly reported "unreachable" in 20/20 runs of S8 and S11.
+* **0 wrong objects, 0 errors, 0 JSON repairs, 0 fallback actions** in all 110 runs.
+* **≈ 4.5 s of LLM planning time** per standard sequence (search → align → approach); waiting for the model is
+  22–38 % of the time to target in most scenarios.
+* **S3 (double distance) failed in 10/10 runs because of perception, not planning:** SAM matched the target in
+  only ≈ 1 % of detections at that distance. The LLM stopped in 6 runs and ran out of steps in 4.
+
+**Outcomes per scenario** (success rate with 95 % Wilson interval, n = 10)
+
+| Scenario | Situation | success | llm_stop | max_steps | Result | Median time to target | LLM calls / run |
+|---|---|---|---|---|---|---|---|
+| S1 | in view | 10 | 0 | 0 | 100 % [72; 100] | 16.5 s | 3 |
+| S2 | in view | 10 | 0 | 0 | 100 % [72; 100] | 18.7 s | 3 |
+| S3 | in view, double distance | 0 | 6 | 4 | 0 % [0; 28] | – | 8 |
+| S4 | in view | 10 | 0 | 0 | 100 % [72; 100] | 6.8 s | 3 |
+| S5 | in view | 10 | 0 | 0 | 100 % [72; 100] | 16.8 s | 3 |
+| S6 | out of view | 10 | 0 | 0 | 100 % [72; 100] | 20.4 s | 3 |
+| S7 | out of view | 10 | 0 | 0 | 100 % [72; 100] | 30.4 s | 5 |
+| S8 | out of view, not in room | 0 | 10 | 0 | correct "unreachable" 10/10 | – | 2 |
+| S9 | lost during approach | 10 | 0 | 0 | 100 % [72; 100] | 16.5 s | 3 |
+| S10 | lost during approach | 10 | 0 | 0 | 100 % [72; 100] | 37.7 s | 7 |
+| S11 | lost, removed from room | 0 | 10 | 0 | correct "unreachable" 10/10 | – | 7 |
+
+`wrong_object`, `fallback_stop`, `user_stop` and `error` were 0 in every scenario.
+
+**Expected behaviour checks**
+
+* S8, S11: abort with "unreachable" in 10/10 runs each. In S11 the object was seen before it was removed in
+  10/10 runs; the planner searched a median of 2 more times before giving up.
+* S9: occlusion bridged without reporting the target as lost in 10/10 runs.
+* S10: continued after `target_not_visible` in 10/10 runs.
+
+**What the LLM decides after a failed skill**
+
+The prompt explains what each skill result means but does not prescribe a reaction, so these are the model's own
+decisions:
+
+| Skill result | n | Next decision | Recovery rate* |
+|---|---|---|---|
+| `target_not_visible` | 21 | `align_to_target` 21× | 100 % (n = 11) |
+| `target_not_found` | 56 | `search_target` 56× | 48 % (n = 44) |
+| `timeout` (search, 0 hits) | 37 | `stop_robot` 26×, `search_target` 11× (10 of them in S11) | 0 % (n = 7) |
+
+\* excluding S8/S11, where recovery is impossible by design.
+
+**Conclusion.** The LLM belongs at the level of composable skills with closed control loops; control,
+perception and safety stay deterministic. Its value shows when something goes wrong — and it is limited by
+the quality of perception (S3).
+
+**Limits.** One robot, one room, one model, n = 10 per scenario, so the intervals are wide. The quantitative
+evaluation covers architecture C.
+
+Reproduce: `python3 analyze_metrics.py data/metrics_2026-09-2*.jsonl` (LaTeX and CSV tables are written to
+`results/tables`).
+
 ## Suggested protocol
 
 * Same start pose, same object placements, N ≥ 10 trials per architecture,
